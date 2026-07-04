@@ -1,5 +1,5 @@
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0 (FIXED)
+-- SKIBIDI HUB RIVALS v2.0 (FULL FIXED)
 -- Tác giả: vietdz
 -- PHẦN 1/5: SERVICES + VARIABLES + SETTINGS + UTILITY
 -- ============================================================
@@ -30,8 +30,10 @@ local IsJumping = false
 local FlyConnection = nil
 local NoClipConnection = nil
 local InfJumpConnection = nil
+local InfJumpHoldConnection = nil
 local Connections = {}
-local RenderConnection = nil
+local espRenderStep = nil
+local aimRenderStep = nil
 
 -- Drawing Objects
 local FOVCircle = nil
@@ -193,7 +195,7 @@ end
 
 print("✅ PHẦN 1/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0 (FIXED)
+-- SKIBIDI HUB RIVALS v2.0 (FULL FIXED)
 -- PHẦN 2/5: AIM + ESP
 -- ============================================================
 
@@ -206,7 +208,7 @@ local function IsPlayerVisible(player)
     if not rootPart then return false end
     
     local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, player.Character}
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     
     local ray = Workspace:Raycast(Camera.CFrame.Position, rootPart.Position - Camera.CFrame.Position, raycastParams)
@@ -245,8 +247,7 @@ end
 local function UpdateFOVCircle()
     if not Settings.AIM.Enabled then
         if FOVCircle then
-            FOVCircle:Remove()
-            FOVCircle = nil
+            FOVCircle.Visible = false
         end
         return
     end
@@ -266,7 +267,7 @@ local function UpdateFOVCircle()
 end
 
 -- ============================================================
--- SECTION 7: ESP FUNCTIONS (FIXED)
+-- SECTION 7: ESP FUNCTIONS (FULL FIXED)
 -- ============================================================
 local function ClearESP()
     for _, obj in pairs(ESPObjects) do
@@ -283,19 +284,21 @@ local function GetPlayerColor(player)
     return Color3.fromRGB(255, 255, 255)
 end
 
--- Tạo Glow cho player
+-- Tạo Glow cho player (xuyên tường)
 local function CreateGlow(player)
     if not player or not player.Character then return end
-    if player.Character:FindFirstChild("Highlight") then return end
-    
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "ESP_Glow"
-    highlight.Parent = player.Character
-    highlight.FillColor = Color3.fromRGB(255, 255, 255)
-    highlight.FillTransparency = 0.5
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.OutlineTransparency = 0
-    highlight.Enabled = true
+    local highlight = player.Character:FindFirstChild("ESP_Glow")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_Glow"
+        highlight.Parent = player.Character
+        highlight.FillTransparency = 0.4
+        highlight.OutlineTransparency = 0
+        highlight.Enabled = true
+    end
+    local color = GetPlayerColor(player)
+    highlight.FillColor = color
+    highlight.OutlineColor = color
     return highlight
 end
 
@@ -361,8 +364,6 @@ local function UpdateESP()
         if Settings.ESP.Glow then
             local glow = CreateGlow(player)
             if glow then
-                glow.FillColor = color
-                glow.OutlineColor = color
                 glow.Enabled = true
             end
         else
@@ -381,7 +382,7 @@ local function UpdateESP()
         local data = ESPData[player.UserId]
         
         -- Box ESP
-        if Settings.ESP.Box and boxHeight > 0 then
+        if Settings.ESP.Box and boxHeight > 0 and boxHeight < 1000 then
             if not data.Box then
                 data.Box = Drawing.new("Square")
                 data.Box.Thickness = 2
@@ -498,7 +499,7 @@ end
 
 print("✅ PHẦN 2/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0 (FIXED)
+-- SKIBIDI HUB RIVALS v2.0 (FULL FIXED)
 -- PHẦN 3/5: PLAYER FUNCTIONS
 -- ============================================================
 
@@ -621,12 +622,16 @@ local function DisableNoClip()
 end
 
 -- ============================================================
--- SECTION 10: INFINITY JUMP (GIỮ NÚT BAY LÊN)
+-- SECTION 10: INFINITY JUMP (FIXED - GIỮ SPACE BAY LÊN)
 -- ============================================================
 local function EnableInfJump()
     if InfJumpConnection then
         InfJumpConnection:Disconnect()
         InfJumpConnection = nil
+    end
+    if InfJumpHoldConnection then
+        InfJumpHoldConnection:Disconnect()
+        InfJumpHoldConnection = nil
     end
     
     local char = LocalPlayer.Character
@@ -637,27 +642,51 @@ local function EnableInfJump()
     
     IsJumping = false
     
-    InfJumpConnection = AddConnection(RunService.Heartbeat:Connect(function()
+    -- Bắt sự kiện nhấn Space
+    InfJumpConnection = AddConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Space and Settings.PLAYER.InfJump then
+            IsJumping = true
+            -- Nhảy ngay lập tức
+            local char = LocalPlayer.Character
+            if char then
+                local h = char:FindFirstChild("Humanoid")
+                if h then
+                    h:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end
+    end))
+    
+    -- Bắt sự kiện thả Space
+    local releaseConn = UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.KeyCode == Enum.KeyCode.Space then
+            IsJumping = false
+        end
+    end)
+    AddConnection(releaseConn)
+    
+    -- Vòng lặp giữ bay lên khi đang giữ Space
+    InfJumpHoldConnection = AddConnection(RunService.Heartbeat:Connect(function()
         if not Settings.PLAYER.InfJump then
             DisableInfJump()
             return
         end
         
-        local char = LocalPlayer.Character
-        if not char then return end
-        
-        local humanoid = char:FindFirstChild("Humanoid")
-        if not humanoid then return end
-        
-        -- Kiểm tra giữ Space
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            if humanoid.FloorMaterial ~= Enum.Material.Air then
-                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            else
-                -- Đang ở trên không, tiếp tục bay lên
+        if IsJumping then
+            local char = LocalPlayer.Character
+            if char then
+                local humanoid = char:FindFirstChild("Humanoid")
                 local root = char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    root.Velocity = Vector3.new(root.Velocity.X, 50, root.Velocity.Z)
+                if humanoid and root then
+                    -- Nếu đang ở trên không, đẩy lên
+                    if humanoid.FloorMaterial == Enum.Material.Air then
+                        root.Velocity = Vector3.new(root.Velocity.X, 50, root.Velocity.Z)
+                    else
+                        -- Nếu đang ở mặt đất, nhảy tiếp
+                        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                    end
                 end
             end
         end
@@ -668,6 +697,10 @@ local function DisableInfJump()
     if InfJumpConnection then
         InfJumpConnection:Disconnect()
         InfJumpConnection = nil
+    end
+    if InfJumpHoldConnection then
+        InfJumpHoldConnection:Disconnect()
+        InfJumpHoldConnection = nil
     end
     IsJumping = false
 end
@@ -688,7 +721,7 @@ LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
 print("✅ PHẦN 3/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0 (FIXED)
+-- SKIBIDI HUB RIVALS v2.0 (FULL FIXED)
 -- PHẦN 4/5: UI RAYFIELD
 -- ============================================================
 
@@ -707,7 +740,7 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ============================================================
--- SECTION 12A: AIM TAB (THÊM RANDOM OFFSET)
+-- SECTION 12A: AIM TAB
 -- ============================================================
 local AimTab = Window:CreateTab("AIM", nil)
 
@@ -720,8 +753,7 @@ AimTab:CreateToggle({
         if not value then
             CurrentTarget = nil
             if FOVCircle then
-                FOVCircle:Remove()
-                FOVCircle = nil
+                FOVCircle.Visible = false
             end
         end
     end
@@ -789,7 +821,7 @@ AimTab:CreateToggle({
 })
 
 -- ============================================================
--- SECTION 12B: ESP TAB (THÊM GLOW)
+-- SECTION 12B: ESP TAB
 -- ============================================================
 local ESPTab = Window:CreateTab("ESP", nil)
 
@@ -963,7 +995,7 @@ PlayerTab:CreateToggle({
 
 print("✅ PHẦN 4/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0 (FIXED)
+-- SKIBIDI HUB RIVALS v2.0 (FULL FIXED)
 -- PHẦN 5/5: SETTINGS + COMMUNITY + SKIBIDI BUTTON + LOOPS
 -- ============================================================
 
@@ -1002,6 +1034,8 @@ SettingsTab:CreateButton({
             ClearConnections()
             if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
             for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
+            if espRenderStep then espRenderStep:Disconnect() espRenderStep = nil end
+            if aimRenderStep then aimRenderStep:Disconnect() aimRenderStep = nil end
         end)
         task.wait(0.5)
         loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -1021,6 +1055,8 @@ SettingsTab:CreateButton({
             ApplyFPSBoost(false)
             if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
             for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
+            if espRenderStep then espRenderStep:Disconnect() espRenderStep = nil end
+            if aimRenderStep then aimRenderStep:Disconnect() aimRenderStep = nil end
             local btnGui = game.CoreGui:FindFirstChild("SkibidiButton")
             if btnGui then btnGui:Destroy() end
         end)
@@ -1172,11 +1208,11 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SECTION 14: LOOPS (FIXED)
+-- SECTION 14: LOOPS (FULL FIXED)
 -- ============================================================
 
--- AIM Loop (sửa FOV)
-AddConnection(RunService.RenderStepped:Connect(function()
+-- AIM Loop (sử dụng RenderStepped)
+aimRenderStep = AddConnection(RunService.RenderStepped:Connect(function()
     pcall(function()
         UpdateFOVCircle()
         
@@ -1204,13 +1240,10 @@ AddConnection(RunService.RenderStepped:Connect(function()
     end)
 end))
 
--- ESP Loop
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        pcall(UpdateESP)
-    end
-end)
+-- ESP Loop (sử dụng RenderStepped thay vì while true)
+espRenderStep = AddConnection(RunService.RenderStepped:Connect(function()
+    pcall(UpdateESP)
+end))
 
 -- ============================================================
 -- SECTION 15: CLEANUP
@@ -1224,6 +1257,8 @@ local function Cleanup()
     ApplyFPSBoost(false)
     if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
     for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
+    if espRenderStep then espRenderStep:Disconnect() espRenderStep = nil end
+    if aimRenderStep then aimRenderStep:Disconnect() aimRenderStep = nil end
 end
 
 game:BindToClose(function() Cleanup() end)
