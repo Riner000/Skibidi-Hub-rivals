@@ -1,5 +1,5 @@
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0
+-- SKIBIDI HUB RIVALS v2.0 (FIXED)
 -- Tác giả: vietdz
 -- PHẦN 1/5: SERVICES + VARIABLES + SETTINGS + UTILITY
 -- ============================================================
@@ -24,12 +24,14 @@ local StartTime = tick()
 local IsUIOpen = true
 local CurrentTarget = nil
 local FPSBoostEnabled = false
+local IsJumping = false
 
 -- Connections
 local FlyConnection = nil
 local NoClipConnection = nil
 local InfJumpConnection = nil
 local Connections = {}
+local RenderConnection = nil
 
 -- Drawing Objects
 local FOVCircle = nil
@@ -46,7 +48,8 @@ local Settings = {
         Smoothness = 0.3,
         AimPart = "Head",
         TeamCheck = false,
-        VisibleCheck = false
+        VisibleCheck = false,
+        RandomOffset = false
     },
     ESP = {
         Enabled = false,
@@ -56,7 +59,8 @@ local Settings = {
         Distance = false,
         Health = false,
         TeamColor = true,
-        MaxDistance = 500
+        MaxDistance = 500,
+        Glow = false
     },
     PLAYER = {
         Speed = 16,
@@ -74,11 +78,6 @@ local Settings = {
 -- ============================================================
 -- SECTION 4: UTILITY FUNCTIONS
 -- ============================================================
-local function IsValid(player)
-    if not player or player ~= player or type(player) ~= "userdata" then return false end
-    return true
-end
-
 local function AddConnection(connection)
     table.insert(Connections, connection)
     return connection
@@ -127,6 +126,15 @@ local function ApplyPlayerSettings()
     humanoid.JumpPower = Settings.PLAYER.JumpPower
 end
 
+-- Random offset cho AIM
+local function GetRandomOffset()
+    return Vector3.new(
+        (math.random() - 0.5) * 0.5,
+        (math.random() - 0.5) * 0.3,
+        (math.random() - 0.5) * 0.5
+    )
+end
+
 -- ============================================================
 -- SECTION 5: FPS BOOST
 -- ============================================================
@@ -156,25 +164,17 @@ end
 
 local function ApplyFPSBoost(enabled)
     if enabled then
-        if not FPSBoostEnabled then
-            SaveFPSBoostState()
-        end
-        
+        if not FPSBoostEnabled then SaveFPSBoostState() end
         pcall(function()
             Lighting.GlobalShadows = false
             Lighting.Brightness = 1
             Lighting.Ambient = Color3.fromRGB(128, 128, 128)
             Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-            
             for effect, _ in pairs(FPSBoostState.Effects) do
-                if effect and effect.Enabled ~= nil then
-                    effect.Enabled = false
-                end
+                if effect and effect.Enabled ~= nil then effect.Enabled = false end
             end
-            
             Workspace.DistributedGameTime = 0.1
         end)
-        
         FPSBoostEnabled = true
     else
         pcall(function()
@@ -182,23 +182,18 @@ local function ApplyFPSBoost(enabled)
             Lighting.Brightness = FPSBoostState.Brightness
             Lighting.Ambient = FPSBoostState.Ambient
             Lighting.OutdoorAmbient = FPSBoostState.OutdoorAmbient
-            
             for effect, state in pairs(FPSBoostState.Effects) do
-                if effect and effect.Enabled ~= nil then
-                    effect.Enabled = state
-                end
+                if effect and effect.Enabled ~= nil then effect.Enabled = state
             end
-            
             Workspace.DistributedGameTime = 0.5
         end)
-        
         FPSBoostEnabled = false
     end
 end
 
 print("✅ PHẦN 1/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0
+-- SKIBIDI HUB RIVALS v2.0 (FIXED)
 -- PHẦN 2/5: AIM + ESP
 -- ============================================================
 
@@ -228,15 +223,8 @@ local function GetClosestPlayer()
     for _, player in pairs(GetAlivePlayers()) do
         if not player.Character then continue end
         
-        -- Team check
-        if Settings.AIM.TeamCheck and player.Team == LocalPlayer.Team then
-            continue
-        end
-        
-        -- Visible check
-        if Settings.AIM.VisibleCheck and not IsPlayerVisible(player) then
-            continue
-        end
+        if Settings.AIM.TeamCheck and player.Team == LocalPlayer.Team then continue end
+        if Settings.AIM.VisibleCheck and not IsPlayerVisible(player) then continue end
         
         local aimPart = GetPart(player, Settings.AIM.AimPart)
         if not aimPart then continue end
@@ -268,7 +256,7 @@ local function UpdateFOVCircle()
         FOVCircle.Thickness = 2
         FOVCircle.Filled = false
         FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-        FOVCircle.Transparency = 0.7
+        FOVCircle.Transparency = 0.5
     end
     
     local viewport = Camera.ViewportSize
@@ -278,13 +266,11 @@ local function UpdateFOVCircle()
 end
 
 -- ============================================================
--- SECTION 7: ESP FUNCTIONS
+-- SECTION 7: ESP FUNCTIONS (FIXED)
 -- ============================================================
 local function ClearESP()
     for _, obj in pairs(ESPObjects) do
-        if obj and obj.Remove then
-            pcall(obj.Remove, obj)
-        end
+        if obj and obj.Remove then pcall(obj.Remove, obj) end
     end
     ESPObjects = {}
     ESPData = {}
@@ -297,9 +283,34 @@ local function GetPlayerColor(player)
     return Color3.fromRGB(255, 255, 255)
 end
 
+-- Tạo Glow cho player
+local function CreateGlow(player)
+    if not player or not player.Character then return end
+    if player.Character:FindFirstChild("Highlight") then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "ESP_Glow"
+    highlight.Parent = player.Character
+    highlight.FillColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.5
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.OutlineTransparency = 0
+    highlight.Enabled = true
+    return highlight
+end
+
+local function RemoveGlow(player)
+    if not player or not player.Character then return end
+    local highlight = player.Character:FindFirstChild("ESP_Glow")
+    if highlight then highlight:Destroy() end
+end
+
 local function UpdateESP()
     if not Settings.ESP.Enabled then
         ClearESP()
+        for _, player in pairs(Players:GetPlayers()) do
+            RemoveGlow(player)
+        end
         return
     end
     
@@ -315,11 +326,11 @@ local function UpdateESP()
     for userId, data in pairs(ESPData) do
         if not currentPlayers[userId] then
             for _, obj in pairs(data) do
-                if obj and obj.Remove then
-                    pcall(obj.Remove, obj)
-                end
+                if obj and obj.Remove then pcall(obj.Remove, obj) end
             end
             ESPData[userId] = nil
+            local player = Players:FindFirstChild(tostring(userId))
+            if player then RemoveGlow(player) end
         end
     end
     
@@ -338,35 +349,44 @@ local function UpdateESP()
         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             distance = (rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
         end
-        if distance > Settings.ESP.MaxDistance then continue end
-        
-        local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
-        if not onScreen then continue end
+        if distance > Settings.ESP.MaxDistance then 
+            RemoveGlow(player)
+            continue 
+        end
         
         local color = GetPlayerColor(player)
         local healthPercent = humanoid.Health / humanoid.MaxHealth
+        
+        -- Glow ESP (xuyên tường)
+        if Settings.ESP.Glow then
+            local glow = CreateGlow(player)
+            if glow then
+                glow.FillColor = color
+                glow.OutlineColor = color
+                glow.Enabled = true
+            end
+        else
+            RemoveGlow(player)
+        end
         
         -- Get head and foot positions
         local headPos, _ = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
         local footPos, _ = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
         
+        -- Kiểm tra on screen cho box
         local boxHeight = math.abs(headPos.Y - footPos.Y)
         local boxWidth = boxHeight * 0.5
         
-        -- Create or update ESP for this player
-        if not ESPData[player.UserId] then
-            ESPData[player.UserId] = {}
-        end
-        
+        if not ESPData[player.UserId] then ESPData[player.UserId] = {} end
         local data = ESPData[player.UserId]
         
         -- Box ESP
-        if Settings.ESP.Box then
+        if Settings.ESP.Box and boxHeight > 0 then
             if not data.Box then
                 data.Box = Drawing.new("Square")
                 data.Box.Thickness = 2
                 data.Box.Filled = false
-                data.Box.Transparency = 0.5
+                data.Box.Transparency = 0.6
                 table.insert(ESPObjects, data.Box)
             end
             data.Box.Size = Vector2.new(boxWidth, boxHeight)
@@ -374,7 +394,7 @@ local function UpdateESP()
             data.Box.Color = color
             data.Box.Visible = true
             
-            -- Health bar
+            -- Health bar bên cạnh box
             if Settings.ESP.Health then
                 if not data.HealthBar then
                     data.HealthBar = Drawing.new("Square")
@@ -418,14 +438,13 @@ local function UpdateESP()
                 data.HealthBorder.Visible = true
             end
         else
-            -- Hide box and health if disabled
             if data.Box then data.Box.Visible = false end
             if data.HealthBar then data.HealthBar.Visible = false end
             if data.HealthBarBG then data.HealthBarBG.Visible = false end
             if data.HealthBorder then data.HealthBorder.Visible = false end
         end
         
-        -- Line ESP
+        -- Line ESP (từ cạnh trên màn hình)
         if Settings.ESP.Line then
             if not data.Line then
                 data.Line = Drawing.new("Line")
@@ -433,7 +452,7 @@ local function UpdateESP()
                 data.Line.Transparency = 0.5
                 table.insert(ESPObjects, data.Line)
             end
-            data.Line.From = Vector2.new(viewport.X / 2, viewport.Y)
+            data.Line.From = Vector2.new(screenPos.X, 0)
             data.Line.To = Vector2.new(screenPos.X, screenPos.Y)
             data.Line.Color = color
             data.Line.Visible = true
@@ -479,7 +498,7 @@ end
 
 print("✅ PHẦN 2/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0
+-- SKIBIDI HUB RIVALS v2.0 (FIXED)
 -- PHẦN 3/5: PLAYER FUNCTIONS
 -- ============================================================
 
@@ -553,13 +572,9 @@ local function DisableFly()
     local char = LocalPlayer.Character
     if char then
         local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
+        if humanoid then humanoid.PlatformStand = false end
         local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.Velocity = Vector3.new(0, 0, 0)
-        end
+        if root then root.Velocity = Vector3.new(0, 0, 0) end
     end
 end
 
@@ -599,16 +614,14 @@ local function DisableNoClip()
     if char then
         for _, part in pairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
-                pcall(function()
-                    part.CanCollide = true
-                end)
+                pcall(function() part.CanCollide = true end)
             end
         end
     end
 end
 
 -- ============================================================
--- SECTION 10: INFINITY JUMP
+-- SECTION 10: INFINITY JUMP (GIỮ NÚT BAY LÊN)
 -- ============================================================
 local function EnableInfJump()
     if InfJumpConnection then
@@ -622,11 +635,31 @@ local function EnableInfJump()
     local humanoid = char:FindFirstChild("Humanoid")
     if not humanoid then return end
     
-    InfJumpConnection = AddConnection(humanoid.StateChanged:Connect(function(oldState, newState)
-        if Settings.PLAYER.InfJump and newState == Enum.HumanoidStateType.Landed then
-            pcall(function()
+    IsJumping = false
+    
+    InfJumpConnection = AddConnection(RunService.Heartbeat:Connect(function()
+        if not Settings.PLAYER.InfJump then
+            DisableInfJump()
+            return
+        end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        
+        -- Kiểm tra giữ Space
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            if humanoid.FloorMaterial ~= Enum.Material.Air then
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end)
+            else
+                -- Đang ở trên không, tiếp tục bay lên
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    root.Velocity = Vector3.new(root.Velocity.X, 50, root.Velocity.Z)
+                end
+            end
         end
     end))
 end
@@ -636,6 +669,7 @@ local function DisableInfJump()
         InfJumpConnection:Disconnect()
         InfJumpConnection = nil
     end
+    IsJumping = false
 end
 
 -- ============================================================
@@ -654,7 +688,7 @@ LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 
 print("✅ PHẦN 3/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0
+-- SKIBIDI HUB RIVALS v2.0 (FIXED)
 -- PHẦN 4/5: UI RAYFIELD
 -- ============================================================
 
@@ -673,7 +707,7 @@ local Window = Rayfield:CreateWindow({
 })
 
 -- ============================================================
--- SECTION 12A: AIM TAB
+-- SECTION 12A: AIM TAB (THÊM RANDOM OFFSET)
 -- ============================================================
 local AimTab = Window:CreateTab("AIM", nil)
 
@@ -728,6 +762,15 @@ AimTab:CreateDropdown({
 })
 
 AimTab:CreateToggle({
+    Name = "Random Offset",
+    CurrentValue = false,
+    Flag = "AIM_Random",
+    Callback = function(value)
+        Settings.AIM.RandomOffset = value
+    end
+})
+
+AimTab:CreateToggle({
     Name = "Team Check",
     CurrentValue = false,
     Flag = "AIM_Team",
@@ -746,7 +789,7 @@ AimTab:CreateToggle({
 })
 
 -- ============================================================
--- SECTION 12B: ESP TAB
+-- SECTION 12B: ESP TAB (THÊM GLOW)
 -- ============================================================
 local ESPTab = Window:CreateTab("ESP", nil)
 
@@ -758,6 +801,9 @@ ESPTab:CreateToggle({
         Settings.ESP.Enabled = value
         if not value then
             ClearESP()
+            for _, player in pairs(Players:GetPlayers()) do
+                RemoveGlow(player)
+            end
         end
     end
 })
@@ -772,7 +818,7 @@ ESPTab:CreateToggle({
 })
 
 ESPTab:CreateToggle({
-    Name = "Line ESP",
+    Name = "Line ESP (Từ trên xuống)",
     CurrentValue = false,
     Flag = "ESP_Line",
     Callback = function(value)
@@ -804,6 +850,20 @@ ESPTab:CreateToggle({
     Flag = "ESP_Health",
     Callback = function(value)
         Settings.ESP.Health = value
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Glow (Xuyên tường)",
+    CurrentValue = false,
+    Flag = "ESP_Glow",
+    Callback = function(value)
+        Settings.ESP.Glow = value
+        if not value then
+            for _, player in pairs(Players:GetPlayers()) do
+                RemoveGlow(player)
+            end
+        end
     end
 })
 
@@ -865,11 +925,7 @@ PlayerTab:CreateToggle({
     Flag = "Player_Fly",
     Callback = function(value)
         Settings.PLAYER.Fly = value
-        if value then
-            EnableFly()
-        else
-            DisableFly()
-        end
+        if value then EnableFly() else DisableFly() end
     end
 })
 
@@ -891,31 +947,23 @@ PlayerTab:CreateToggle({
     Flag = "Player_NoClip",
     Callback = function(value)
         Settings.PLAYER.NoClip = value
-        if value then
-            EnableNoClip()
-        else
-            DisableNoClip()
-        end
+        if value then EnableNoClip() else DisableNoClip() end
     end
 })
 
 PlayerTab:CreateToggle({
-    Name = "Infinity Jump",
+    Name = "Infinity Jump (Giữ Space)",
     CurrentValue = false,
     Flag = "Player_InfJump",
     Callback = function(value)
         Settings.PLAYER.InfJump = value
-        if value then
-            EnableInfJump()
-        else
-            DisableInfJump()
-        end
+        if value then EnableInfJump() else DisableInfJump() end
     end
 })
 
 print("✅ PHẦN 4/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- SKIBIDI HUB RIVALS v2.0
+-- SKIBIDI HUB RIVALS v2.0 (FIXED)
 -- PHẦN 5/5: SETTINGS + COMMUNITY + SKIBIDI BUTTON + LOOPS
 -- ============================================================
 
@@ -952,10 +1000,8 @@ SettingsTab:CreateButton({
             DisableNoClip()
             DisableInfJump()
             ClearConnections()
-            if FOVCircle then
-                FOVCircle:Remove()
-                FOVCircle = nil
-            end
+            if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
+            for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
         end)
         task.wait(0.5)
         loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -973,10 +1019,8 @@ SettingsTab:CreateButton({
             DisableInfJump()
             ClearConnections()
             ApplyFPSBoost(false)
-            if FOVCircle then
-                FOVCircle:Remove()
-                FOVCircle = nil
-            end
+            if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
+            for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
             local btnGui = game.CoreGui:FindFirstChild("SkibidiButton")
             if btnGui then btnGui:Destroy() end
         end)
@@ -990,48 +1034,35 @@ local CommunityTab = Window:CreateTab("COMMUNITY", nil)
 
 CommunityTab:CreateButton({
     Name = "Discord",
-    Callback = function()
-        setclipboard("https://discord.gg/")
-    end
+    Callback = function() setclipboard("https://discord.gg/") end
 })
 
 CommunityTab:CreateButton({
     Name = "TikTok",
-    Callback = function()
-        setclipboard("https://tiktok.com/")
-    end
+    Callback = function() setclipboard("https://tiktok.com/") end
 })
 
 CommunityTab:CreateButton({
     Name = "YouTube",
-    Callback = function()
-        setclipboard("https://youtube.com/")
-    end
+    Callback = function() setclipboard("https://youtube.com/") end
 })
 
 CommunityTab:CreateButton({
     Name = "Twitter/X",
-    Callback = function()
-        setclipboard("https://x.com/")
-    end
+    Callback = function() setclipboard("https://x.com/") end
 })
 
 CommunityTab:CreateButton({
     Name = "Instagram",
-    Callback = function()
-        setclipboard("https://instagram.com/")
-    end
+    Callback = function() setclipboard("https://instagram.com/") end
 })
 
 CommunityTab:CreateButton({
     Name = "Telegram",
-    Callback = function()
-        setclipboard("https://t.me/")
-    end
+    Callback = function() setclipboard("https://t.me/") end
 })
 
 CommunityTab:CreateDivider()
-
 CommunityTab:CreateLabel("Script by vietdz")
 CommunityTab:CreateLabel("Game: RIVALS")
 CommunityTab:CreateLabel("Version: 2.0")
@@ -1124,9 +1155,7 @@ local function CreateSkibidiButton()
     btn.MouseButton1Click:Connect(function()
         if dragging then return end
         IsUIOpen = not IsUIOpen
-        if Window then
-            Window.Visible = IsUIOpen
-        end
+        if Window then Window.Visible = IsUIOpen end
         if IsUIOpen then
             TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 0, ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
         else
@@ -1143,12 +1172,36 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SECTION 14: LOOPS
+-- SECTION 14: LOOPS (FIXED)
 -- ============================================================
 
--- AIM Loop
+-- AIM Loop (sửa FOV)
 AddConnection(RunService.RenderStepped:Connect(function()
-    pcall(AimLoop)
+    pcall(function()
+        UpdateFOVCircle()
+        
+        if Settings.AIM.Enabled then
+            local target = GetClosestPlayer()
+            CurrentTarget = target
+            
+            if target and target.Character then
+                local aimPart = GetPart(target, Settings.AIM.AimPart)
+                if aimPart then
+                    local targetPos = aimPart.Position
+                    
+                    -- Random offset
+                    if Settings.AIM.RandomOffset then
+                        targetPos = targetPos + GetRandomOffset()
+                    end
+                    
+                    local currentPos = Camera.CFrame.Position
+                    local lookAt = CFrame.lookAt(currentPos, targetPos)
+                    local smooth = Settings.AIM.Smoothness
+                    Camera.CFrame = Camera.CFrame:Lerp(lookAt, smooth)
+                end
+            end
+        end
+    end)
 end))
 
 -- ESP Loop
@@ -1156,18 +1209,6 @@ task.spawn(function()
     while true do
         task.wait(0.1)
         pcall(UpdateESP)
-    end
-end)
-
--- Stats Update
-task.spawn(function()
-    while true do
-        task.wait(1)
-        pcall(function()
-            if Window and Window.Visible then
-                -- Cập nhật stats nếu cần
-            end
-        end)
     end
 end)
 
@@ -1181,22 +1222,14 @@ local function Cleanup()
     DisableInfJump()
     ClearConnections()
     ApplyFPSBoost(false)
-    if FOVCircle then
-        FOVCircle:Remove()
-        FOVCircle = nil
-    end
+    if FOVCircle then FOVCircle:Remove() FOVCircle = nil end
+    for _, player in pairs(Players:GetPlayers()) do RemoveGlow(player) end
 end
 
--- Cleanup khi game đóng
-game:BindToClose(function()
-    Cleanup()
-end)
+game:BindToClose(function() Cleanup() end)
 
--- Cleanup khi player rời
 Players.PlayerRemoving:Connect(function(player)
-    if player == LocalPlayer then
-        Cleanup()
-    end
+    if player == LocalPlayer then Cleanup() end
 end)
 
 print("✅ PHẦN 5/5 ĐÃ LOAD XONG!")
