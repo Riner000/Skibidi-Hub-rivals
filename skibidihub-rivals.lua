@@ -1,5 +1,11 @@
 -- ============================================================
--- [PHẦN 1/3] KHỞI TẠO + RAYFIELD + NÚT SKIBIDI
+-- SKIBIDI HUB RIVALS v2.0
+-- Tác giả: vietdz
+-- PHẦN 1/5: SERVICES + VARIABLES + SETTINGS + UTILITY
+-- ============================================================
+
+-- ============================================================
+-- SECTION 1: SERVICES
 -- ============================================================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -7,14 +13,32 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 local Camera = Workspace.CurrentCamera
 local Stats = game:GetService("Stats")
-local Lighting = game:GetService("Lighting")
 
+-- ============================================================
+-- SECTION 2: VARIABLES
+-- ============================================================
 local StartTime = tick()
-local isUIOpen = true
+local IsUIOpen = true
+local CurrentTarget = nil
+local FPSBoostEnabled = false
 
--- ==================== CÀI ĐẶT ====================
+-- Connections
+local FlyConnection = nil
+local NoClipConnection = nil
+local InfJumpConnection = nil
+local Connections = {}
+
+-- Drawing Objects
+local FOVCircle = nil
+local ESPObjects = {}
+local ESPData = {}
+
+-- ============================================================
+-- SECTION 3: SETTINGS
+-- ============================================================
 local Settings = {
     AIM = {
         Enabled = false,
@@ -31,8 +55,8 @@ local Settings = {
         Name = false,
         Distance = false,
         Health = false,
-        MaxDistance = 500,
-        TeamColor = true
+        TeamColor = true,
+        MaxDistance = 500
     },
     PLAYER = {
         Speed = 16,
@@ -41,149 +65,622 @@ local Settings = {
         FlySpeed = 50,
         NoClip = false,
         InfJump = false
+    },
+    MISC = {
+        FPSBoost = false
     }
 }
 
--- ==================== BIẾN TOÀN CỤC ====================
-local ESPObjects = {}
-local FlyConnection = nil
-local NoClipConnection = nil
-local InfJumpConnection = nil
-local CurrentTarget = nil
-local FOVCircle = nil
-local FPSBoostEnabled = false
-
--- ==================== NÚT SKIBIDI TOILET ====================
-local function CreateSkibidiButton()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "SkibidiButton"
-    gui.Parent = game.CoreGui
-    gui.ResetOnSpawn = false
-    
-    local btn = Instance.new("ImageButton")
-    btn.Size = UDim2.new(0, 60, 0, 60)
-    btn.Position = UDim2.new(0, 15, 0, 100)
-    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
-    btn.BackgroundTransparency = 0.3
-    btn.BorderSizePixel = 2
-    btn.BorderColor3 = Color3.fromRGB(100, 150, 255)
-    btn.Image = "rbxassetid://1000174591"
-    btn.ScaleType = Enum.ScaleType.Fit
-    btn.Parent = gui
-    btn.ZIndex = 10
-    
-    -- Glow
-    local glow = Instance.new("ImageLabel")
-    glow.Size = UDim2.new(1.5, 0, 1.5, 0)
-    glow.Position = UDim2.new(-0.25, 0, -0.25, 0)
-    glow.BackgroundTransparency = 1
-    glow.Image = "rbxassetid://1000174591"
-    glow.ImageColor3 = Color3.fromRGB(100, 150, 255)
-    glow.ImageTransparency = 0.5
-    glow.ZIndex = 0
-    glow.Parent = btn
-    
-    -- Label
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 0, 14)
-    label.Position = UDim2.new(0, 0, 1, 2)
-    label.BackgroundTransparency = 1
-    label.Text = "SKIBIDI"
-    label.TextColor3 = Color3.fromRGB(100, 150, 255)
-    label.TextScaled = true
-    label.Font = Enum.Font.GothamBlack
-    label.Parent = btn
-    
-    -- Xoay glow
-    spawn(function()
-        local angle = 0
-        while btn and btn.Parent do
-            angle = angle + 0.5
-            glow.Rotation = angle
-            task.wait(0.05)
-        end
-    end)
-    
-    -- Kéo thả
-    local dragging = false
-    local dragStart = nil
-    local startPos = nil
-    
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = btn.Position
-        end
-    end)
-    
-    btn.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-    
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            local newX = startPos.X.Offset + delta.X
-            local newY = startPos.Y.Offset + delta.Y
-            local viewport = Camera.ViewportSize
-            newX = math.clamp(newX, 0, viewport.X - 60)
-            newY = math.clamp(newY, 0, viewport.Y - 60)
-            btn.Position = UDim2.new(0, newX, 0, newY)
-        end
-    end)
-    
-    -- Click mở Rayfield
-    btn.MouseButton1Click:Connect(function()
-        if dragging then return end
-        isUIOpen = not isUIOpen
-        if isUIOpen then
-            -- Mở Rayfield
-            if Rayfield and Rayfield.Window then
-                Rayfield.Window.Visible = true
-            end
-            TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 0, ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-        else
-            if Rayfield and Rayfield.Window then
-                Rayfield.Window.Visible = false
-            end
-            TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 360, ImageColor3 = Color3.fromRGB(100, 150, 255)}):Play()
-        end
-    end)
-    
-    return btn
+-- ============================================================
+-- SECTION 4: UTILITY FUNCTIONS
+-- ============================================================
+local function IsValid(player)
+    if not player or player ~= player or type(player) ~= "userdata" then return false end
+    return true
 end
 
-spawn(function()
-    wait(0.5)
-    CreateSkibidiButton()
-end)
+local function AddConnection(connection)
+    table.insert(Connections, connection)
+    return connection
+end
 
--- ==================== TẠO RAYFIELD UI ====================
+local function ClearConnections()
+    for _, conn in pairs(Connections) do
+        if conn and conn.Disconnect then
+            pcall(conn.Disconnect, conn)
+        end
+    end
+    Connections = {}
+end
+
+local function GetAlivePlayers()
+    local alive = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                table.insert(alive, player)
+            end
+        end
+    end
+    return alive
+end
+
+local function GetPart(player, partName)
+    if not player or not player.Character then return nil end
+    if partName == "Head" then
+        return player.Character:FindFirstChild("Head")
+    elseif partName == "Body" then
+        return player.Character:FindFirstChild("UpperTorso") or player.Character:FindFirstChild("HumanoidRootPart")
+    elseif partName == "Legs" then
+        return player.Character:FindFirstChild("LeftLeg") or player.Character:FindFirstChild("RightLeg") or player.Character:FindFirstChild("HumanoidRootPart")
+    end
+    return nil
+end
+
+local function ApplyPlayerSettings()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    humanoid.WalkSpeed = Settings.PLAYER.Speed
+    humanoid.JumpPower = Settings.PLAYER.JumpPower
+end
+
+-- ============================================================
+-- SECTION 5: FPS BOOST
+-- ============================================================
+local FPSBoostState = {
+    GlobalShadows = true,
+    Brightness = 2,
+    Ambient = Color3.fromRGB(127, 127, 127),
+    OutdoorAmbient = Color3.fromRGB(127, 127, 127),
+    Effects = {}
+}
+
+local function SaveFPSBoostState()
+    FPSBoostState.GlobalShadows = Lighting.GlobalShadows
+    FPSBoostState.Brightness = Lighting.Brightness
+    FPSBoostState.Ambient = Lighting.Ambient
+    FPSBoostState.OutdoorAmbient = Lighting.OutdoorAmbient
+    FPSBoostState.Effects = {}
+    
+    for _, effect in pairs(Lighting:GetChildren()) do
+        if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or 
+           effect:IsA("ColorCorrectionEffect") or effect:IsA("DepthOfFieldEffect") or 
+           effect:IsA("SunRaysEffect") or effect:IsA("Atmosphere") then
+            FPSBoostState.Effects[effect] = effect.Enabled
+        end
+    end
+end
+
+local function ApplyFPSBoost(enabled)
+    if enabled then
+        if not FPSBoostEnabled then
+            SaveFPSBoostState()
+        end
+        
+        pcall(function()
+            Lighting.GlobalShadows = false
+            Lighting.Brightness = 1
+            Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+            
+            for effect, _ in pairs(FPSBoostState.Effects) do
+                if effect and effect.Enabled ~= nil then
+                    effect.Enabled = false
+                end
+            end
+            
+            Workspace.DistributedGameTime = 0.1
+        end)
+        
+        FPSBoostEnabled = true
+    else
+        pcall(function()
+            Lighting.GlobalShadows = FPSBoostState.GlobalShadows
+            Lighting.Brightness = FPSBoostState.Brightness
+            Lighting.Ambient = FPSBoostState.Ambient
+            Lighting.OutdoorAmbient = FPSBoostState.OutdoorAmbient
+            
+            for effect, state in pairs(FPSBoostState.Effects) do
+                if effect and effect.Enabled ~= nil then
+                    effect.Enabled = state
+                end
+            end
+            
+            Workspace.DistributedGameTime = 0.5
+        end)
+        
+        FPSBoostEnabled = false
+    end
+end
+
+print("✅ PHẦN 1/5 ĐÃ LOAD XONG!")
+-- ============================================================
+-- SKIBIDI HUB RIVALS v2.0
+-- PHẦN 2/5: AIM + ESP
+-- ============================================================
+
+-- ============================================================
+-- SECTION 6: AIM FUNCTIONS
+-- ============================================================
+local function IsPlayerVisible(player)
+    if not player or not player.Character then return false end
+    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false end
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local ray = Workspace:Raycast(Camera.CFrame.Position, rootPart.Position - Camera.CFrame.Position, raycastParams)
+    return ray == nil
+end
+
+local function GetClosestPlayer()
+    if not Settings.AIM.Enabled then return nil end
+    
+    local closest = nil
+    local closestDist = Settings.AIM.FOV
+    local mousePos = UserInputService:GetMouseLocation()
+    
+    for _, player in pairs(GetAlivePlayers()) do
+        if not player.Character then continue end
+        
+        -- Team check
+        if Settings.AIM.TeamCheck and player.Team == LocalPlayer.Team then
+            continue
+        end
+        
+        -- Visible check
+        if Settings.AIM.VisibleCheck and not IsPlayerVisible(player) then
+            continue
+        end
+        
+        local aimPart = GetPart(player, Settings.AIM.AimPart)
+        if not aimPart then continue end
+        
+        local screenPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
+        if not onScreen then continue end
+        
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+        if dist < closestDist then
+            closestDist = dist
+            closest = player
+        end
+    end
+    
+    return closest
+end
+
+local function UpdateFOVCircle()
+    if not Settings.AIM.Enabled then
+        if FOVCircle then
+            FOVCircle:Remove()
+            FOVCircle = nil
+        end
+        return
+    end
+    
+    if not FOVCircle then
+        FOVCircle = Drawing.new("Circle")
+        FOVCircle.Thickness = 2
+        FOVCircle.Filled = false
+        FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+        FOVCircle.Transparency = 0.7
+    end
+    
+    local viewport = Camera.ViewportSize
+    FOVCircle.Position = Vector2.new(viewport.X / 2, viewport.Y / 2)
+    FOVCircle.Radius = Settings.AIM.FOV
+    FOVCircle.Visible = true
+end
+
+-- ============================================================
+-- SECTION 7: ESP FUNCTIONS
+-- ============================================================
+local function ClearESP()
+    for _, obj in pairs(ESPObjects) do
+        if obj and obj.Remove then
+            pcall(obj.Remove, obj)
+        end
+    end
+    ESPObjects = {}
+    ESPData = {}
+end
+
+local function GetPlayerColor(player)
+    if Settings.ESP.TeamColor and player.Team then
+        return player.TeamColor or Color3.fromRGB(255, 255, 255)
+    end
+    return Color3.fromRGB(255, 255, 255)
+end
+
+local function UpdateESP()
+    if not Settings.ESP.Enabled then
+        ClearESP()
+        return
+    end
+    
+    local viewport = Camera.ViewportSize
+    local currentPlayers = {}
+    
+    -- Collect alive players
+    for _, player in pairs(GetAlivePlayers()) do
+        currentPlayers[player.UserId] = player
+    end
+    
+    -- Remove ESP for dead/left players
+    for userId, data in pairs(ESPData) do
+        if not currentPlayers[userId] then
+            for _, obj in pairs(data) do
+                if obj and obj.Remove then
+                    pcall(obj.Remove, obj)
+                end
+            end
+            ESPData[userId] = nil
+        end
+    end
+    
+    -- Update ESP for alive players
+    for _, player in pairs(GetAlivePlayers()) do
+        if not player or not player.Character then continue end
+        
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local head = player.Character:FindFirstChild("Head")
+        
+        if not humanoid or not rootPart or not head then continue end
+        
+        -- Distance check
+        local distance = 0
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            distance = (rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+        end
+        if distance > Settings.ESP.MaxDistance then continue end
+        
+        local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+        if not onScreen then continue end
+        
+        local color = GetPlayerColor(player)
+        local healthPercent = humanoid.Health / humanoid.MaxHealth
+        
+        -- Get head and foot positions
+        local headPos, _ = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local footPos, _ = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+        
+        local boxHeight = math.abs(headPos.Y - footPos.Y)
+        local boxWidth = boxHeight * 0.5
+        
+        -- Create or update ESP for this player
+        if not ESPData[player.UserId] then
+            ESPData[player.UserId] = {}
+        end
+        
+        local data = ESPData[player.UserId]
+        
+        -- Box ESP
+        if Settings.ESP.Box then
+            if not data.Box then
+                data.Box = Drawing.new("Square")
+                data.Box.Thickness = 2
+                data.Box.Filled = false
+                data.Box.Transparency = 0.5
+                table.insert(ESPObjects, data.Box)
+            end
+            data.Box.Size = Vector2.new(boxWidth, boxHeight)
+            data.Box.Position = Vector2.new(headPos.X - boxWidth/2, headPos.Y)
+            data.Box.Color = color
+            data.Box.Visible = true
+            
+            -- Health bar
+            if Settings.ESP.Health then
+                if not data.HealthBar then
+                    data.HealthBar = Drawing.new("Square")
+                    data.HealthBar.Filled = true
+                    data.HealthBarBG = Drawing.new("Square")
+                    data.HealthBarBG.Filled = true
+                    data.HealthBarBG.Color = Color3.fromRGB(20, 20, 20)
+                    data.HealthBorder = Drawing.new("Square")
+                    data.HealthBorder.Filled = false
+                    data.HealthBorder.Thickness = 1
+                    data.HealthBorder.Transparency = 0.5
+                    data.HealthBorder.Color = Color3.fromRGB(255, 255, 255)
+                    table.insert(ESPObjects, data.HealthBar)
+                    table.insert(ESPObjects, data.HealthBarBG)
+                    table.insert(ESPObjects, data.HealthBorder)
+                end
+                
+                local barWidth = 4
+                local barHeight = boxHeight
+                local barX = headPos.X + boxWidth/2 + 3
+                local barY = headPos.Y
+                local healthBarHeight = barHeight * healthPercent
+                
+                data.HealthBarBG.Size = Vector2.new(barWidth, barHeight)
+                data.HealthBarBG.Position = Vector2.new(barX, barY)
+                data.HealthBarBG.Visible = true
+                
+                data.HealthBar.Size = Vector2.new(barWidth, healthBarHeight)
+                data.HealthBar.Position = Vector2.new(barX, barY + barHeight - healthBarHeight)
+                if healthPercent > 0.5 then
+                    data.HealthBar.Color = Color3.fromRGB(0, 255, 50)
+                elseif healthPercent > 0.25 then
+                    data.HealthBar.Color = Color3.fromRGB(255, 200, 0)
+                else
+                    data.HealthBar.Color = Color3.fromRGB(255, 0, 0)
+                end
+                data.HealthBar.Visible = true
+                
+                data.HealthBorder.Size = Vector2.new(barWidth, barHeight)
+                data.HealthBorder.Position = Vector2.new(barX, barY)
+                data.HealthBorder.Visible = true
+            end
+        else
+            -- Hide box and health if disabled
+            if data.Box then data.Box.Visible = false end
+            if data.HealthBar then data.HealthBar.Visible = false end
+            if data.HealthBarBG then data.HealthBarBG.Visible = false end
+            if data.HealthBorder then data.HealthBorder.Visible = false end
+        end
+        
+        -- Line ESP
+        if Settings.ESP.Line then
+            if not data.Line then
+                data.Line = Drawing.new("Line")
+                data.Line.Thickness = 1
+                data.Line.Transparency = 0.5
+                table.insert(ESPObjects, data.Line)
+            end
+            data.Line.From = Vector2.new(viewport.X / 2, viewport.Y)
+            data.Line.To = Vector2.new(screenPos.X, screenPos.Y)
+            data.Line.Color = color
+            data.Line.Visible = true
+        else
+            if data.Line then data.Line.Visible = false end
+        end
+        
+        -- Name ESP
+        if Settings.ESP.Name then
+            if not data.Name then
+                data.Name = Drawing.new("Text")
+                data.Name.Size = 14
+                data.Name.Center = true
+                data.Name.Outline = true
+                table.insert(ESPObjects, data.Name)
+            end
+            data.Name.Text = player.Name
+            data.Name.Position = Vector2.new(headPos.X, headPos.Y - 25)
+            data.Name.Color = color
+            data.Name.Visible = true
+        else
+            if data.Name then data.Name.Visible = false end
+        end
+        
+        -- Distance ESP
+        if Settings.ESP.Distance then
+            if not data.Distance then
+                data.Distance = Drawing.new("Text")
+                data.Distance.Size = 12
+                data.Distance.Center = true
+                data.Distance.Outline = true
+                data.Distance.Color = Color3.fromRGB(200, 200, 200)
+                table.insert(ESPObjects, data.Distance)
+            end
+            data.Distance.Text = math.floor(distance) .. "m"
+            data.Distance.Position = Vector2.new(headPos.X, headPos.Y - 10)
+            data.Distance.Visible = true
+        else
+            if data.Distance then data.Distance.Visible = false end
+        end
+    end
+end
+
+print("✅ PHẦN 2/5 ĐÃ LOAD XONG!")
+-- ============================================================
+-- SKIBIDI HUB RIVALS v2.0
+-- PHẦN 3/5: PLAYER FUNCTIONS
+-- ============================================================
+
+-- ============================================================
+-- SECTION 8: FLY
+-- ============================================================
+local function EnableFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not root or not humanoid then return end
+    
+    humanoid.PlatformStand = true
+    
+    if FlyConnection then
+        FlyConnection:Disconnect()
+        FlyConnection = nil
+    end
+    
+    FlyConnection = AddConnection(RunService.Heartbeat:Connect(function()
+        if not Settings.PLAYER.Fly then
+            DisableFly()
+            return
+        end
+        
+        local char = LocalPlayer.Character
+        if not char or not char.Parent then
+            DisableFly()
+            return
+        end
+        
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local moveDir = Vector3.new()
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDir = moveDir + Camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDir = moveDir - Camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDir = moveDir - Camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDir = moveDir + Camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDir = moveDir + Vector3.new(0, 1, 0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            moveDir = moveDir + Vector3.new(0, -1, 0)
+        end
+        
+        if moveDir.Magnitude > 0 then
+            root.Velocity = moveDir.Unit * Settings.PLAYER.FlySpeed
+        else
+            root.Velocity = Vector3.new(0, 0, 0)
+        end
+    end))
+end
+
+local function DisableFly()
+    if FlyConnection then
+        FlyConnection:Disconnect()
+        FlyConnection = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = false
+        end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+end
+
+-- ============================================================
+-- SECTION 9: NOCLIP
+-- ============================================================
+local function EnableNoClip()
+    if NoClipConnection then
+        NoClipConnection:Disconnect()
+        NoClipConnection = nil
+    end
+    
+    NoClipConnection = AddConnection(RunService.Stepped:Connect(function()
+        if not Settings.PLAYER.NoClip then
+            DisableNoClip()
+            return
+        end
+        
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end))
+end
+
+local function DisableNoClip()
+    if NoClipConnection then
+        NoClipConnection:Disconnect()
+        NoClipConnection = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function()
+                    part.CanCollide = true
+                end)
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- SECTION 10: INFINITY JUMP
+-- ============================================================
+local function EnableInfJump()
+    if InfJumpConnection then
+        InfJumpConnection:Disconnect()
+        InfJumpConnection = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return end
+    
+    InfJumpConnection = AddConnection(humanoid.StateChanged:Connect(function(oldState, newState)
+        if Settings.PLAYER.InfJump and newState == Enum.HumanoidStateType.Landed then
+            pcall(function()
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end)
+        end
+    end))
+end
+
+local function DisableInfJump()
+    if InfJumpConnection then
+        InfJumpConnection:Disconnect()
+        InfJumpConnection = nil
+    end
+end
+
+-- ============================================================
+-- SECTION 11: RESPAWN HANDLER
+-- ============================================================
+local function OnCharacterAdded(char)
+    task.wait(0.5)
+    ApplyPlayerSettings()
+    
+    if Settings.PLAYER.Fly then EnableFly() end
+    if Settings.PLAYER.NoClip then EnableNoClip() end
+    if Settings.PLAYER.InfJump then EnableInfJump() end
+end
+
+LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+
+print("✅ PHẦN 3/5 ĐÃ LOAD XONG!")
+-- ============================================================
+-- SKIBIDI HUB RIVALS v2.0
+-- PHẦN 4/5: UI RAYFIELD
+-- ============================================================
+
+-- ============================================================
+-- SECTION 12: RAYFIELD UI
+-- ============================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
     Name = "Skibidi Hub | RIVALS",
     LoadingTitle = "Skibidi Hub",
     LoadingSubtitle = "by vietdz",
-    ConfigurationSaving = {
-        Enabled = false
-    },
-    Discord = {
-        Enabled = false
-    },
+    ConfigurationSaving = {Enabled = false},
+    Discord = {Enabled = false},
     KeySystem = false
 })
 
--- ==================== TAB AIM ====================
+-- ============================================================
+-- SECTION 12A: AIM TAB
+-- ============================================================
 local AimTab = Window:CreateTab("AIM", nil)
 
 AimTab:CreateToggle({
     Name = "Enable AIM",
     CurrentValue = false,
-    Flag = "AIM_Toggle",
+    Flag = "AIM_Enable",
     Callback = function(value)
         Settings.AIM.Enabled = value
         if not value then
@@ -248,13 +745,15 @@ AimTab:CreateToggle({
     end
 })
 
--- ==================== TAB ESP ====================
+-- ============================================================
+-- SECTION 12B: ESP TAB
+-- ============================================================
 local ESPTab = Window:CreateTab("ESP", nil)
 
 ESPTab:CreateToggle({
     Name = "Enable ESP",
     CurrentValue = false,
-    Flag = "ESP_Toggle",
+    Flag = "ESP_Enable",
     Callback = function(value)
         Settings.ESP.Enabled = value
         if not value then
@@ -323,13 +822,15 @@ ESPTab:CreateSlider({
     Increment = 50,
     Suffix = "m",
     CurrentValue = 500,
-    Flag = "ESP_Distance",
+    Flag = "ESP_MaxDistance",
     Callback = function(value)
         Settings.ESP.MaxDistance = value
     end
 })
 
--- ==================== TAB PLAYER ====================
+-- ============================================================
+-- SECTION 12C: PLAYER TAB
+-- ============================================================
 local PlayerTab = Window:CreateTab("PLAYER", nil)
 
 PlayerTab:CreateSlider({
@@ -341,10 +842,7 @@ PlayerTab:CreateSlider({
     Flag = "Player_Speed",
     Callback = function(value)
         Settings.PLAYER.Speed = value
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            char.Humanoid.WalkSpeed = value
-        end
+        ApplyPlayerSettings()
     end
 })
 
@@ -357,10 +855,7 @@ PlayerTab:CreateSlider({
     Flag = "Player_Jump",
     Callback = function(value)
         Settings.PLAYER.JumpPower = value
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("Humanoid") then
-            char.Humanoid.JumpPower = value
-        end
+        ApplyPlayerSettings()
     end
 })
 
@@ -417,522 +912,36 @@ PlayerTab:CreateToggle({
         end
     end
 })
+
+print("✅ PHẦN 4/5 ĐÃ LOAD XONG!")
 -- ============================================================
--- [PHẦN 2/3] CÁC HÀM AIM + ESP
--- ============================================================
-
--- ==================== HÀM AIM ====================
-local function IsPlayerVisible(player)
-    if not player or not player.Character then return false end
-    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return false end
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    
-    local ray = Workspace:Raycast(Camera.CFrame.Position, rootPart.Position - Camera.CFrame.Position, raycastParams)
-    return ray == nil
-end
-
-local function GetClosestPlayer()
-    local closest = nil
-    local closestDist = Settings.AIM.FOV
-    local mousePos = UserInputService:GetMouseLocation()
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if not player.Character then continue end
-        
-        local humanoid = player.Character:FindFirstChild("Humanoid")
-        if not humanoid or humanoid.Health <= 0 then continue end
-        
-        -- Team check
-        if Settings.AIM.TeamCheck then
-            if player.Team == LocalPlayer.Team then continue end
-        end
-        
-        -- Visible check
-        if Settings.AIM.VisibleCheck then
-            if not IsPlayerVisible(player) then continue end
-        end
-        
-        local aimPart = nil
-        local partName = Settings.AIM.AimPart
-        if partName == "Head" then
-            aimPart = player.Character:FindFirstChild("Head")
-        elseif partName == "Body" then
-            aimPart = player.Character:FindFirstChild("UpperTorso") or player.Character:FindFirstChild("HumanoidRootPart")
-        elseif partName == "Legs" then
-            aimPart = player.Character:FindFirstChild("LeftLeg") or player.Character:FindFirstChild("RightLeg")
-        end
-        
-        if not aimPart then continue end
-        
-        local screenPos, onScreen = Camera:WorldToViewportPoint(aimPart.Position)
-        if not onScreen then continue end
-        
-        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-        if dist < closestDist then
-            closestDist = dist
-            closest = player
-        end
-    end
-    
-    return closest
-end
-
--- ==================== FOV CIRCLE ====================
-local function UpdateFOVCircle()
-    if not Settings.AIM.Enabled then
-        if FOVCircle then
-            FOVCircle:Remove()
-            FOVCircle = nil
-        end
-        return
-    end
-    
-    if not FOVCircle then
-        FOVCircle = Drawing.new("Circle")
-        FOVCircle.Thickness = 2
-        FOVCircle.Filled = false
-        FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-        FOVCircle.Transparency = 0.7
-    end
-    
-    local viewport = Camera.ViewportSize
-    FOVCircle.Position = Vector2.new(viewport.X / 2, viewport.Y / 2)
-    FOVCircle.Radius = Settings.AIM.FOV
-    FOVCircle.Visible = true
-end
-
--- ==================== AIM LOOP ====================
-RunService.RenderStepped:Connect(function()
-    UpdateFOVCircle()
-    
-    if not Settings.AIM.Enabled then return end
-    
-    local target = GetClosestPlayer()
-    CurrentTarget = target
-    
-    if target and target.Character then
-        local aimPart = nil
-        local partName = Settings.AIM.AimPart
-        if partName == "Head" then
-            aimPart = target.Character:FindFirstChild("Head")
-        elseif partName == "Body" then
-            aimPart = target.Character:FindFirstChild("UpperTorso") or target.Character:FindFirstChild("HumanoidRootPart")
-        elseif partName == "Legs" then
-            aimPart = target.Character:FindFirstChild("LeftLeg") or target.Character:FindFirstChild("RightLeg")
-        end
-        
-        if aimPart then
-            local targetPos = aimPart.Position
-            local currentPos = Camera.CFrame.Position
-            local lookAt = CFrame.lookAt(currentPos, targetPos)
-            
-            -- Smooth aim
-            local smooth = Settings.AIM.Smoothness
-            local newCFrame = Camera.CFrame:Lerp(lookAt, smooth)
-            Camera.CFrame = newCFrame
-        end
-    end
-end)
-
--- ==================== HÀM ESP ====================
-local function ClearESP()
-    for _, obj in pairs(ESPObjects) do
-        if obj:IsA("Drawing") then
-            obj:Remove()
-        end
-    end
-    ESPObjects = {}
-end
-
-local function GetPlayerColor(player)
-    if Settings.ESP.TeamColor and player.Team then
-        return player.TeamColor or Color3.fromRGB(255, 255, 255)
-    end
-    return Color3.fromRGB(255, 255, 255)
-end
-
-local function CreateESP()
-    ClearESP()
-    if not Settings.ESP.Enabled then return end
-    
-    local viewport = Camera.ViewportSize
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if not player.Character then continue end
-        
-        local humanoid = player.Character:FindFirstChild("Humanoid")
-        if not humanoid or humanoid.Health <= 0 then continue end
-        
-        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-        local head = player.Character:FindFirstChild("Head")
-        if not rootPart or not head then continue end
-        
-        -- Distance check
-        local distance = 0
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            distance = (rootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
-        end
-        if distance > Settings.ESP.MaxDistance then continue end
-        
-        local screenPos, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
-        if not onScreen then continue end
-        
-        local color = GetPlayerColor(player)
-        local healthPercent = humanoid.Health / humanoid.MaxHealth
-        
-        -- Lấy vị trí head và foot để tính box
-        local headPos, _ = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-        local footPos, _ = Camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
-        
-        local boxHeight = math.abs(headPos.Y - footPos.Y)
-        local boxWidth = boxHeight * 0.5
-        
-        -- ==================== BOX ESP ====================
-        if Settings.ESP.Box then
-            local box = Drawing.new("Square")
-            box.Size = Vector2.new(boxWidth, boxHeight)
-            box.Position = Vector2.new(headPos.X - boxWidth/2, headPos.Y)
-            box.Color = color
-            box.Thickness = 2
-            box.Filled = false
-            box.Transparency = 0.5
-            box.Visible = true
-            table.insert(ESPObjects, box)
-            
-            -- ==================== THANH MÁU BÊN CẠNH BOX ====================
-            if Settings.ESP.Health then
-                local barWidth = 4
-                local barHeight = boxHeight
-                local barX = headPos.X + boxWidth/2 + 3
-                local barY = headPos.Y
-                
-                -- Nền thanh máu
-                local bgBar = Drawing.new("Square")
-                bgBar.Size = Vector2.new(barWidth, barHeight)
-                bgBar.Position = Vector2.new(barX, barY)
-                bgBar.Color = Color3.fromRGB(20, 20, 20)
-                bgBar.Filled = true
-                bgBar.Visible = true
-                table.insert(ESPObjects, bgBar)
-                
-                -- Thanh máu
-                local healthBar = Drawing.new("Square")
-                local healthBarHeight = barHeight * healthPercent
-                healthBar.Size = Vector2.new(barWidth, healthBarHeight)
-                healthBar.Position = Vector2.new(barX, barY + barHeight - healthBarHeight)
-                if healthPercent > 0.5 then
-                    healthBar.Color = Color3.fromRGB(0, 255, 50)
-                elseif healthPercent > 0.25 then
-                    healthBar.Color = Color3.fromRGB(255, 200, 0)
-                else
-                    healthBar.Color = Color3.fromRGB(255, 0, 0)
-                end
-                healthBar.Filled = true
-                healthBar.Visible = true
-                table.insert(ESPObjects, healthBar)
-                
-                -- Viền thanh máu
-                local borderBar = Drawing.new("Square")
-                borderBar.Size = Vector2.new(barWidth, barHeight)
-                borderBar.Position = Vector2.new(barX, barY)
-                borderBar.Color = Color3.fromRGB(255, 255, 255)
-                borderBar.Thickness = 1
-                borderBar.Filled = false
-                borderBar.Transparency = 0.5
-                borderBar.Visible = true
-                table.insert(ESPObjects, borderBar)
-            end
-        end
-        
-        -- ==================== LINE ESP ====================
-        if Settings.ESP.Line then
-            local line = Drawing.new("Line")
-            line.From = Vector2.new(viewport.X / 2, viewport.Y)
-            line.To = Vector2.new(screenPos.X, screenPos.Y)
-            line.Color = color
-            line.Thickness = 1
-            line.Transparency = 0.5
-            line.Visible = true
-            table.insert(ESPObjects, line)
-        end
-        
-        -- ==================== NAME ESP ====================
-        if Settings.ESP.Name then
-            local nameText = Drawing.new("Text")
-            nameText.Text = player.Name
-            nameText.Position = Vector2.new(headPos.X, headPos.Y - 25)
-            nameText.Color = color
-            nameText.Size = 14
-            nameText.Center = true
-            nameText.Outline = true
-            nameText.Visible = true
-            table.insert(ESPObjects, nameText)
-        end
-        
-        -- ==================== DISTANCE ESP ====================
-        if Settings.ESP.Distance then
-            local distText = Drawing.new("Text")
-            distText.Text = math.floor(distance) .. "m"
-            distText.Position = Vector2.new(headPos.X, headPos.Y - 10)
-            distText.Color = Color3.fromRGB(200, 200, 200)
-            distText.Size = 12
-            distText.Center = true
-            distText.Outline = true
-            distText.Visible = true
-            table.insert(ESPObjects, distText)
-        end
-    end
-end
-
--- ESP Loop
-spawn(function()
-    while true do
-        task.wait(0.1)
-        if Settings.ESP.Enabled then
-            pcall(CreateESP)
-        end
-    end
-end)
--- ============================================================
--- [PHẦN 3/3] CÁC HÀM PLAYER + FPS BOOST + TAB SETTINGS + COMMUNITY
+-- SKIBIDI HUB RIVALS v2.0
+-- PHẦN 5/5: SETTINGS + COMMUNITY + SKIBIDI BUTTON + LOOPS
 -- ============================================================
 
--- ==================== HÀM FLY ====================
-local function EnableFly()
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not root or not humanoid then return end
-    
-    humanoid.PlatformStand = true
-    
-    if FlyConnection then FlyConnection:Disconnect() end
-    
-    FlyConnection = RunService.Heartbeat:Connect(function()
-        if not Settings.PLAYER.Fly then return end
-        if not char or not char.Parent then
-            DisableFly()
-            return
-        end
-        
-        local moveDir = Vector3.new()
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-            moveDir = moveDir + Camera.CFrame.LookVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-            moveDir = moveDir - Camera.CFrame.LookVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-            moveDir = moveDir - Camera.CFrame.RightVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-            moveDir = moveDir + Camera.CFrame.RightVector
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-            moveDir = moveDir + Vector3.new(0, 1, 0)
-        end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            moveDir = moveDir + Vector3.new(0, -1, 0)
-        end
-        
-        if moveDir.Magnitude > 0 then
-            root.Velocity = moveDir.Unit * Settings.PLAYER.FlySpeed
-        else
-            root.Velocity = Vector3.new(0, 0, 0)
-        end
-    end)
-end
-
-local function DisableFly()
-    if FlyConnection then
-        FlyConnection:Disconnect()
-        FlyConnection = nil
-    end
-    
-    local char = LocalPlayer.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = false
-        end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.Velocity = Vector3.new(0, 0, 0)
-        end
-    end
-end
-
--- ==================== HÀM NOCLIP ====================
-local function EnableNoClip()
-    if NoClipConnection then NoClipConnection:Disconnect() end
-    
-    NoClipConnection = RunService.Stepped:Connect(function()
-        if not Settings.PLAYER.NoClip then return end
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
-            end
-        end
-    end)
-end
-
-local function DisableNoClip()
-    if NoClipConnection then
-        NoClipConnection:Disconnect()
-        NoClipConnection = nil
-    end
-    
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
-            end
-        end
-    end
-end
-
--- ==================== HÀM INFINITY JUMP ====================
-local function EnableInfJump()
-    if InfJumpConnection then InfJumpConnection:Disconnect() end
-    
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoid then return end
-    
-    InfJumpConnection = humanoid.StateChanged:Connect(function(oldState, newState)
-        if Settings.PLAYER.InfJump and newState == Enum.HumanoidStateType.Landed then
-            humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-        end
-    end)
-end
-
-local function DisableInfJump()
-    if InfJumpConnection then
-        InfJumpConnection:Disconnect()
-        InfJumpConnection = nil
-    end
-end
-
--- ==================== FPS BOOST ====================
-local function ToggleFPSBoost(enabled)
-    FPSBoostEnabled = enabled
-    if enabled then
-        -- Tắt hiệu ứng ánh sáng
-        Lighting.GlobalShadows = false
-        Lighting.Brightness = 1
-        Lighting.Ambient = Color3.fromRGB(128, 128, 128)
-        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-        
-        -- Tắt bloom và các hiệu ứng
-        for _, effect in pairs(Lighting:GetChildren()) do
-            if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") or 
-               effect:IsA("DepthOfFieldEffect") or effect:IsA("SunRaysEffect") or effect:IsA("Atmosphere") then
-                effect.Enabled = false
-            end
-        end
-        
-        -- Giảm chất lượng vật thể
-        Workspace.DistributedGameTime = 0.1
-        Workspace.FallenPartsDestroyHeight = -500
-        
-        -- Tắt particle và decals
-        for _, v in pairs(Workspace:GetDescendants()) do
-            if v:IsA("ParticleEmitter") then
-                v.Enabled = false
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 1
-            elseif v:IsA("BasePart") and v.Material == Enum.Material.Neon then
-                v.Material = Enum.Material.Plastic
-            end
-        end
-        
-        -- Tối ưu camera
-        Camera.FieldOfView = 70
-        
-        print("⚡ FPS Boost đã bật!")
-    else
-        -- Khôi phục
-        Lighting.GlobalShadows = true
-        Lighting.Brightness = 2
-        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
-        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
-        
-        for _, effect in pairs(Lighting:GetChildren()) do
-            if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") or 
-               effect:IsA("DepthOfFieldEffect") or effect:IsA("SunRaysEffect") or effect:IsA("Atmosphere") then
-                effect.Enabled = true
-            end
-        end
-        
-        Workspace.DistributedGameTime = 0.5
-        
-        for _, v in pairs(Workspace:GetDescendants()) do
-            if v:IsA("ParticleEmitter") then
-                v.Enabled = true
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v.Transparency = 0
-            end
-        end
-        
-        Camera.FieldOfView = 70
-        
-        print("⚡ FPS Boost đã tắt!")
-    end
-end
-
--- ==================== THEO DÕI RESPAWN ====================
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.5)
-    
-    local humanoid = char:FindFirstChild("Humanoid")
-    if humanoid then
-        humanoid.WalkSpeed = Settings.PLAYER.Speed
-        humanoid.JumpPower = Settings.PLAYER.JumpPower
-    end
-    
-    if Settings.PLAYER.Fly then EnableFly() end
-    if Settings.PLAYER.NoClip then EnableNoClip() end
-    if Settings.PLAYER.InfJump then EnableInfJump() end
-end)
-
--- ==================== TAB SETTINGS ====================
+-- ============================================================
+-- SECTION 12D: SETTINGS TAB
+-- ============================================================
 local SettingsTab = Window:CreateTab("SETTINGS", nil)
 
--- FPS Boost Toggle
 SettingsTab:CreateToggle({
     Name = "FPS Boost",
     CurrentValue = false,
     Flag = "FPS_Boost",
     Callback = function(value)
-        ToggleFPSBoost(value)
+        Settings.MISC.FPSBoost = value
+        ApplyFPSBoost(value)
     end
 })
 
--- FPS Boost Info
 SettingsTab:CreateLabel("FPS Boost sẽ:")
 SettingsTab:CreateLabel("- Tắt bóng đổ")
 SettingsTab:CreateLabel("- Tắt hiệu ứng ánh sáng")
 SettingsTab:CreateLabel("- Tắt Particle/Decal")
 SettingsTab:CreateLabel("- Giảm chất lượng đồ họa")
-SettingsTab:CreateLabel("=> Tăng FPS tối đa")
 
 SettingsTab:CreateDivider()
 
--- Reload Button
 SettingsTab:CreateButton({
     Name = "Reload UI",
     Callback = function()
@@ -942,17 +951,17 @@ SettingsTab:CreateButton({
             DisableFly()
             DisableNoClip()
             DisableInfJump()
+            ClearConnections()
             if FOVCircle then
                 FOVCircle:Remove()
                 FOVCircle = nil
             end
         end)
-        wait(0.5)
+        task.wait(0.5)
         loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
     end
 })
 
--- Destroy Button
 SettingsTab:CreateButton({
     Name = "Destroy UI",
     Callback = function()
@@ -962,6 +971,8 @@ SettingsTab:CreateButton({
             DisableFly()
             DisableNoClip()
             DisableInfJump()
+            ClearConnections()
+            ApplyFPSBoost(false)
             if FOVCircle then
                 FOVCircle:Remove()
                 FOVCircle = nil
@@ -969,50 +980,51 @@ SettingsTab:CreateButton({
             local btnGui = game.CoreGui:FindFirstChild("SkibidiButton")
             if btnGui then btnGui:Destroy() end
         end)
-        ToggleFPSBoost(false)
     end
 })
 
--- ==================== TAB COMMUNITY ====================
+-- ============================================================
+-- SECTION 12E: COMMUNITY TAB
+-- ============================================================
 local CommunityTab = Window:CreateTab("COMMUNITY", nil)
 
 CommunityTab:CreateButton({
-    Name = "💬 Discord",
+    Name = "Discord",
     Callback = function()
         setclipboard("https://discord.gg/")
     end
 })
 
 CommunityTab:CreateButton({
-    Name = "🎵 TikTok",
+    Name = "TikTok",
     Callback = function()
         setclipboard("https://tiktok.com/")
     end
 })
 
 CommunityTab:CreateButton({
-    Name = "▶️ YouTube",
+    Name = "YouTube",
     Callback = function()
         setclipboard("https://youtube.com/")
     end
 })
 
 CommunityTab:CreateButton({
-    Name = "🐦 Twitter/X",
+    Name = "Twitter/X",
     Callback = function()
         setclipboard("https://x.com/")
     end
 })
 
 CommunityTab:CreateButton({
-    Name = "📷 Instagram",
+    Name = "Instagram",
     Callback = function()
         setclipboard("https://instagram.com/")
     end
 })
 
 CommunityTab:CreateButton({
-    Name = "✈️ Telegram",
+    Name = "Telegram",
     Callback = function()
         setclipboard("https://t.me/")
     end
@@ -1022,4 +1034,173 @@ CommunityTab:CreateDivider()
 
 CommunityTab:CreateLabel("Script by vietdz")
 CommunityTab:CreateLabel("Game: RIVALS")
-CommunityTab:CreateLabel("Version: 1.0")
+CommunityTab:CreateLabel("Version: 2.0")
+
+-- ============================================================
+-- SECTION 13: SKIBIDI BUTTON
+-- ============================================================
+local function CreateSkibidiButton()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SkibidiButton"
+    gui.Parent = game.CoreGui
+    gui.ResetOnSpawn = false
+    
+    local btn = Instance.new("ImageButton")
+    btn.Size = UDim2.new(0, 60, 0, 60)
+    btn.Position = UDim2.new(0, 15, 0, 100)
+    btn.BackgroundColor3 = Color3.fromRGB(20, 20, 40)
+    btn.BackgroundTransparency = 0.3
+    btn.BorderSizePixel = 2
+    btn.BorderColor3 = Color3.fromRGB(100, 150, 255)
+    btn.Image = "rbxassetid://1000174591"
+    btn.ScaleType = Enum.ScaleType.Fit
+    btn.Parent = gui
+    btn.ZIndex = 10
+    
+    -- Glow
+    local glow = Instance.new("ImageLabel")
+    glow.Size = UDim2.new(1.5, 0, 1.5, 0)
+    glow.Position = UDim2.new(-0.25, 0, -0.25, 0)
+    glow.BackgroundTransparency = 1
+    glow.Image = "rbxassetid://1000174591"
+    glow.ImageColor3 = Color3.fromRGB(100, 150, 255)
+    glow.ImageTransparency = 0.5
+    glow.ZIndex = 0
+    glow.Parent = btn
+    
+    -- Label
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 14)
+    label.Position = UDim2.new(0, 0, 1, 2)
+    label.BackgroundTransparency = 1
+    label.Text = "SKIBIDI"
+    label.TextColor3 = Color3.fromRGB(100, 150, 255)
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBlack
+    label.Parent = btn
+    
+    -- Xoay glow
+    task.spawn(function()
+        local angle = 0
+        while btn and btn.Parent do
+            angle = angle + 0.5
+            glow.Rotation = angle
+            task.wait(0.05)
+        end
+    end)
+    
+    -- Kéo thả
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = btn.Position
+        end
+    end)
+    
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            local newX = startPos.X.Offset + delta.X
+            local newY = startPos.Y.Offset + delta.Y
+            local viewport = Camera.ViewportSize
+            newX = math.clamp(newX, 0, viewport.X - 60)
+            newY = math.clamp(newY, 0, viewport.Y - 60)
+            btn.Position = UDim2.new(0, newX, 0, newY)
+        end
+    end)
+    
+    -- Click mở UI
+    btn.MouseButton1Click:Connect(function()
+        if dragging then return end
+        IsUIOpen = not IsUIOpen
+        if Window then
+            Window.Visible = IsUIOpen
+        end
+        if IsUIOpen then
+            TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 0, ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        else
+            TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 360, ImageColor3 = Color3.fromRGB(100, 150, 255)}):Play()
+        end
+    end)
+    
+    return btn
+end
+
+task.spawn(function()
+    task.wait(0.5)
+    CreateSkibidiButton()
+end)
+
+-- ============================================================
+-- SECTION 14: LOOPS
+-- ============================================================
+
+-- AIM Loop
+AddConnection(RunService.RenderStepped:Connect(function()
+    pcall(AimLoop)
+end))
+
+-- ESP Loop
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(UpdateESP)
+    end
+end)
+
+-- Stats Update
+task.spawn(function()
+    while true do
+        task.wait(1)
+        pcall(function()
+            if Window and Window.Visible then
+                -- Cập nhật stats nếu cần
+            end
+        end)
+    end
+end)
+
+-- ============================================================
+-- SECTION 15: CLEANUP
+-- ============================================================
+local function Cleanup()
+    ClearESP()
+    DisableFly()
+    DisableNoClip()
+    DisableInfJump()
+    ClearConnections()
+    ApplyFPSBoost(false)
+    if FOVCircle then
+        FOVCircle:Remove()
+        FOVCircle = nil
+    end
+end
+
+-- Cleanup khi game đóng
+game:BindToClose(function()
+    Cleanup()
+end)
+
+-- Cleanup khi player rời
+Players.PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer then
+        Cleanup()
+    end
+end)
+
+print("✅ PHẦN 5/5 ĐÃ LOAD XONG!")
+print("==========================================")
+print("🎯 SKIBIDI HUB RIVALS v2.0 ĐÃ SẴN SÀNG!")
+print("📌 Tác giả: vietdz")
+print("==========================================")
