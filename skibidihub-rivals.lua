@@ -1,5 +1,5 @@
 -- ============================================================
--- [PHẦN 1/3] KHỞI TẠO + REDZ UI + NÚT SKIBIDI (CÓ KÉO THẢ)
+-- [PHẦN 1/3] KHỞI TẠO + RAYFIELD + NÚT SKIBIDI
 -- ============================================================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Camera = Workspace.CurrentCamera
 local Stats = game:GetService("Stats")
+local Lighting = game:GetService("Lighting")
 
 local StartTime = tick()
 local isUIOpen = true
@@ -50,15 +51,15 @@ local NoClipConnection = nil
 local InfJumpConnection = nil
 local CurrentTarget = nil
 local FOVCircle = nil
+local FPSBoostEnabled = false
 
--- ==================== NÚT SKIBIDI TOILET (CÓ KÉO THẢ) ====================
+-- ==================== NÚT SKIBIDI TOILET ====================
 local function CreateSkibidiButton()
     local gui = Instance.new("ScreenGui")
     gui.Name = "SkibidiButton"
     gui.Parent = game.CoreGui
     gui.ResetOnSpawn = false
     
-    -- Main button
     local btn = Instance.new("ImageButton")
     btn.Size = UDim2.new(0, 60, 0, 60)
     btn.Position = UDim2.new(0, 15, 0, 100)
@@ -103,7 +104,7 @@ local function CreateSkibidiButton()
         end
     end)
     
-    -- ==================== KÉO THẢ NÚT ====================
+    -- Kéo thả
     local dragging = false
     local dragStart = nil
     local startPos = nil
@@ -127,30 +128,27 @@ local function CreateSkibidiButton()
             local delta = input.Position - dragStart
             local newX = startPos.X.Offset + delta.X
             local newY = startPos.Y.Offset + delta.Y
-            
-            -- Giới hạn không cho ra ngoài màn hình
-            local viewport = game:GetService("Camera").ViewportSize
+            local viewport = Camera.ViewportSize
             newX = math.clamp(newX, 0, viewport.X - 60)
             newY = math.clamp(newY, 0, viewport.Y - 60)
-            
             btn.Position = UDim2.new(0, newX, 0, newY)
         end
     end)
     
-    -- ==================== CLICK MỞ UI ====================
+    -- Click mở Rayfield
     btn.MouseButton1Click:Connect(function()
-        -- Không mở nếu đang kéo
         if dragging then return end
-        
         isUIOpen = not isUIOpen
         if isUIOpen then
-            -- Mở REDZ UI
-            local redzUI = game.CoreGui:FindFirstChild("REDZ_UI")
-            if redzUI then redzUI.Enabled = true end
+            -- Mở Rayfield
+            if Rayfield and Rayfield.Window then
+                Rayfield.Window.Visible = true
+            end
             TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 0, ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
         else
-            local redzUI = game.CoreGui:FindFirstChild("REDZ_UI")
-            if redzUI then redzUI.Enabled = false end
+            if Rayfield and Rayfield.Window then
+                Rayfield.Window.Visible = false
+            end
             TweenService:Create(btn, TweenInfo.new(0.3), {Rotation = 360, ImageColor3 = Color3.fromRGB(100, 150, 255)}):Play()
         end
     end)
@@ -163,27 +161,29 @@ spawn(function()
     CreateSkibidiButton()
 end)
 
--- ==================== TẠO UI REDZ ====================
-local REDZ = loadstring(game:HttpGet("https://pastebin.com/raw/8PqTZx7L"))()
+-- ==================== TẠO RAYFIELD UI ====================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
-local Window = REDZ:CreateWindow({
+local Window = Rayfield:CreateWindow({
     Name = "Skibidi Hub | RIVALS",
-    Size = UDim2.new(0, 500, 0, 400),
-    Position = UDim2.new(0.5, -250, 0.5, -200),
-    Theme = "Dark",
-    Minimizable = true
+    LoadingTitle = "Skibidi Hub",
+    LoadingSubtitle = "by vietdz",
+    ConfigurationSaving = {
+        Enabled = false
+    },
+    Discord = {
+        Enabled = false
+    },
+    KeySystem = false
 })
 
 -- ==================== TAB AIM ====================
-local AimTab = Window:CreateTab({
-    Name = "AIM",
-    Icon = "🎯"
-})
+local AimTab = Window:CreateTab("AIM", nil)
 
--- AIM Toggle
 AimTab:CreateToggle({
     Name = "Enable AIM",
-    Default = false,
+    CurrentValue = false,
+    Flag = "AIM_Toggle",
     Callback = function(value)
         Settings.AIM.Enabled = value
         if not value then
@@ -196,67 +196,65 @@ AimTab:CreateToggle({
     end
 })
 
--- FOV Slider
 AimTab:CreateSlider({
     Name = "FOV Radius",
-    Min = 50,
-    Max = 500,
-    Default = 200,
+    Range = {50, 500},
+    Increment = 10,
+    Suffix = "px",
+    CurrentValue = 200,
+    Flag = "AIM_FOV",
     Callback = function(value)
         Settings.AIM.FOV = value
     end
 })
 
--- Smoothness Slider
 AimTab:CreateSlider({
     Name = "Smoothness",
-    Min = 0.1,
-    Max = 1,
-    Decimal = true,
-    Default = 0.3,
+    Range = {1, 10},
+    Increment = 1,
+    Suffix = "",
+    CurrentValue = 3,
+    Flag = "AIM_Smooth",
     Callback = function(value)
-        Settings.AIM.Smoothness = value
+        Settings.AIM.Smoothness = value / 10
     end
 })
 
--- Aim Part Dropdown
 AimTab:CreateDropdown({
     Name = "Aim Part",
     Options = {"Head", "Body", "Legs"},
-    Default = "Head",
+    CurrentOption = "Head",
+    Flag = "AIM_Part",
     Callback = function(option)
         Settings.AIM.AimPart = option
     end
 })
 
--- Team Check Toggle
 AimTab:CreateToggle({
     Name = "Team Check",
-    Default = false,
+    CurrentValue = false,
+    Flag = "AIM_Team",
     Callback = function(value)
         Settings.AIM.TeamCheck = value
     end
 })
 
--- Visible Check Toggle
 AimTab:CreateToggle({
     Name = "Visible Check",
-    Default = false,
+    CurrentValue = false,
+    Flag = "AIM_Visible",
     Callback = function(value)
         Settings.AIM.VisibleCheck = value
     end
 })
 
 -- ==================== TAB ESP ====================
-local ESPTab = Window:CreateTab({
-    Name = "ESP",
-    Icon = "👁️"
-})
+local ESPTab = Window:CreateTab("ESP", nil)
 
--- ESP Toggle
 ESPTab:CreateToggle({
     Name = "Enable ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Toggle",
     Callback = function(value)
         Settings.ESP.Enabled = value
         if not value then
@@ -265,10 +263,10 @@ ESPTab:CreateToggle({
     end
 })
 
--- ESP Options
 ESPTab:CreateToggle({
     Name = "Box ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Box",
     Callback = function(value)
         Settings.ESP.Box = value
     end
@@ -276,7 +274,8 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateToggle({
     Name = "Line ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Line",
     Callback = function(value)
         Settings.ESP.Line = value
     end
@@ -284,7 +283,8 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateToggle({
     Name = "Name ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Name",
     Callback = function(value)
         Settings.ESP.Name = value
     end
@@ -292,7 +292,8 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateToggle({
     Name = "Distance ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Distance",
     Callback = function(value)
         Settings.ESP.Distance = value
     end
@@ -300,7 +301,8 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateToggle({
     Name = "Health ESP",
-    Default = false,
+    CurrentValue = false,
+    Flag = "ESP_Health",
     Callback = function(value)
         Settings.ESP.Health = value
     end
@@ -308,7 +310,8 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateToggle({
     Name = "Team Color",
-    Default = true,
+    CurrentValue = true,
+    Flag = "ESP_TeamColor",
     Callback = function(value)
         Settings.ESP.TeamColor = value
     end
@@ -316,26 +319,26 @@ ESPTab:CreateToggle({
 
 ESPTab:CreateSlider({
     Name = "Max Distance",
-    Min = 50,
-    Max = 1000,
-    Default = 500,
+    Range = {50, 1000},
+    Increment = 50,
+    Suffix = "m",
+    CurrentValue = 500,
+    Flag = "ESP_Distance",
     Callback = function(value)
         Settings.ESP.MaxDistance = value
     end
 })
 
 -- ==================== TAB PLAYER ====================
-local PlayerTab = Window:CreateTab({
-    Name = "PLAYER",
-    Icon = "👤"
-})
+local PlayerTab = Window:CreateTab("PLAYER", nil)
 
--- Speed Slider
 PlayerTab:CreateSlider({
     Name = "Walk Speed",
-    Min = 16,
-    Max = 250,
-    Default = 16,
+    Range = {16, 250},
+    Increment = 1,
+    Suffix = "",
+    CurrentValue = 16,
+    Flag = "Player_Speed",
     Callback = function(value)
         Settings.PLAYER.Speed = value
         local char = LocalPlayer.Character
@@ -345,12 +348,13 @@ PlayerTab:CreateSlider({
     end
 })
 
--- Jump Slider
 PlayerTab:CreateSlider({
     Name = "Jump Power",
-    Min = 40,
-    Max = 200,
-    Default = 50,
+    Range = {40, 200},
+    Increment = 1,
+    Suffix = "",
+    CurrentValue = 50,
+    Flag = "Player_Jump",
     Callback = function(value)
         Settings.PLAYER.JumpPower = value
         local char = LocalPlayer.Character
@@ -360,10 +364,10 @@ PlayerTab:CreateSlider({
     end
 })
 
--- Fly Toggle
 PlayerTab:CreateToggle({
     Name = "Fly",
-    Default = false,
+    CurrentValue = false,
+    Flag = "Player_Fly",
     Callback = function(value)
         Settings.PLAYER.Fly = value
         if value then
@@ -374,21 +378,22 @@ PlayerTab:CreateToggle({
     end
 })
 
--- Fly Speed Slider
 PlayerTab:CreateSlider({
     Name = "Fly Speed",
-    Min = 10,
-    Max = 300,
-    Default = 50,
+    Range = {10, 300},
+    Increment = 10,
+    Suffix = "",
+    CurrentValue = 50,
+    Flag = "Player_FlySpeed",
     Callback = function(value)
         Settings.PLAYER.FlySpeed = value
     end
 })
 
--- NoClip Toggle
 PlayerTab:CreateToggle({
     Name = "NoClip",
-    Default = false,
+    CurrentValue = false,
+    Flag = "Player_NoClip",
     Callback = function(value)
         Settings.PLAYER.NoClip = value
         if value then
@@ -399,10 +404,10 @@ PlayerTab:CreateToggle({
     end
 })
 
--- InfJump Toggle
 PlayerTab:CreateToggle({
     Name = "Infinity Jump",
-    Default = false,
+    CurrentValue = false,
+    Flag = "Player_InfJump",
     Callback = function(value)
         Settings.PLAYER.InfJump = value
         if value then
@@ -413,7 +418,7 @@ PlayerTab:CreateToggle({
     end
 })
 -- ============================================================
--- [PHẦN 2/3] CÁC HÀM AIM + ESP (CÓ THANH MÁU BÊN CẠNH BOX)
+-- [PHẦN 2/3] CÁC HÀM AIM + ESP
 -- ============================================================
 
 -- ==================== HÀM AIM ====================
@@ -534,7 +539,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ==================== HÀM ESP (CÓ THANH MÁU BÊN CẠNH BOX) ====================
+-- ==================== HÀM ESP ====================
 local function ClearESP()
     for _, obj in pairs(ESPObjects) do
         if obj:IsA("Drawing") then
@@ -607,7 +612,7 @@ local function CreateESP()
                 local barX = headPos.X + boxWidth/2 + 3
                 local barY = headPos.Y
                 
-                -- Nền thanh máu (màu đen)
+                -- Nền thanh máu
                 local bgBar = Drawing.new("Square")
                 bgBar.Size = Vector2.new(barWidth, barHeight)
                 bgBar.Position = Vector2.new(barX, barY)
@@ -616,18 +621,17 @@ local function CreateESP()
                 bgBar.Visible = true
                 table.insert(ESPObjects, bgBar)
                 
-                -- Thanh máu (màu xanh lá)
+                -- Thanh máu
                 local healthBar = Drawing.new("Square")
                 local healthBarHeight = barHeight * healthPercent
                 healthBar.Size = Vector2.new(barWidth, healthBarHeight)
                 healthBar.Position = Vector2.new(barX, barY + barHeight - healthBarHeight)
-                -- Màu theo % máu
                 if healthPercent > 0.5 then
-                    healthBar.Color = Color3.fromRGB(0, 255, 50)  -- Xanh lá
+                    healthBar.Color = Color3.fromRGB(0, 255, 50)
                 elseif healthPercent > 0.25 then
-                    healthBar.Color = Color3.fromRGB(255, 200, 0) -- Vàng
+                    healthBar.Color = Color3.fromRGB(255, 200, 0)
                 else
-                    healthBar.Color = Color3.fromRGB(255, 0, 0)   -- Đỏ
+                    healthBar.Color = Color3.fromRGB(255, 0, 0)
                 end
                 healthBar.Filled = true
                 healthBar.Visible = true
@@ -683,20 +687,6 @@ local function CreateESP()
             distText.Visible = true
             table.insert(ESPObjects, distText)
         end
-        
-        -- ==================== HEALTH TEXT (tùy chọn) ====================
-        if Settings.ESP.Health and not Settings.ESP.Box then
-            -- Nếu không bật box, hiển thị text máu
-            local healthText = Drawing.new("Text")
-            healthText.Text = math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth)
-            healthText.Position = Vector2.new(headPos.X, headPos.Y + boxHeight + 10)
-            healthText.Color = Color3.fromRGB(0, 255, 50)
-            healthText.Size = 12
-            healthText.Center = true
-            healthText.Outline = true
-            healthText.Visible = true
-            table.insert(ESPObjects, healthText)
-        end
     end
 end
 
@@ -710,7 +700,7 @@ spawn(function()
     end
 end)
 -- ============================================================
--- [PHẦN 3/3] CÁC HÀM PLAYER + HOÀN THIỆN
+-- [PHẦN 3/3] CÁC HÀM PLAYER + FPS BOOST + TAB SETTINGS + COMMUNITY
 -- ============================================================
 
 -- ==================== HÀM FLY ====================
@@ -837,6 +827,73 @@ local function DisableInfJump()
     end
 end
 
+-- ==================== FPS BOOST ====================
+local function ToggleFPSBoost(enabled)
+    FPSBoostEnabled = enabled
+    if enabled then
+        -- Tắt hiệu ứng ánh sáng
+        Lighting.GlobalShadows = false
+        Lighting.Brightness = 1
+        Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+        Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+        
+        -- Tắt bloom và các hiệu ứng
+        for _, effect in pairs(Lighting:GetChildren()) do
+            if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") or 
+               effect:IsA("DepthOfFieldEffect") or effect:IsA("SunRaysEffect") or effect:IsA("Atmosphere") then
+                effect.Enabled = false
+            end
+        end
+        
+        -- Giảm chất lượng vật thể
+        Workspace.DistributedGameTime = 0.1
+        Workspace.FallenPartsDestroyHeight = -500
+        
+        -- Tắt particle và decals
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") then
+                v.Enabled = false
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 1
+            elseif v:IsA("BasePart") and v.Material == Enum.Material.Neon then
+                v.Material = Enum.Material.Plastic
+            end
+        end
+        
+        -- Tối ưu camera
+        Camera.FieldOfView = 70
+        
+        print("⚡ FPS Boost đã bật!")
+    else
+        -- Khôi phục
+        Lighting.GlobalShadows = true
+        Lighting.Brightness = 2
+        Lighting.Ambient = Color3.fromRGB(127, 127, 127)
+        Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
+        
+        for _, effect in pairs(Lighting:GetChildren()) do
+            if effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("ColorCorrectionEffect") or 
+               effect:IsA("DepthOfFieldEffect") or effect:IsA("SunRaysEffect") or effect:IsA("Atmosphere") then
+                effect.Enabled = true
+            end
+        end
+        
+        Workspace.DistributedGameTime = 0.5
+        
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") then
+                v.Enabled = true
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v.Transparency = 0
+            end
+        end
+        
+        Camera.FieldOfView = 70
+        
+        print("⚡ FPS Boost đã tắt!")
+    end
+end
+
 -- ==================== THEO DÕI RESPAWN ====================
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.5)
@@ -853,71 +910,116 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 -- ==================== TAB SETTINGS ====================
-local SettingsTab = Window:CreateTab({
-    Name = "SETTINGS",
-    Icon = "⚙️"
-})
+local SettingsTab = Window:CreateTab("SETTINGS", nil)
 
-SettingsTab:CreateButton({
-    Name = "Reload UI",
-    Callback = function()
-        Window:Destroy()
-        wait(0.5)
-        loadstring(game:HttpGet("https://pastebin.com/raw/8PqTZx7L"))()
+-- FPS Boost Toggle
+SettingsTab:CreateToggle({
+    Name = "FPS Boost",
+    CurrentValue = false,
+    Flag = "FPS_Boost",
+    Callback = function(value)
+        ToggleFPSBoost(value)
     end
 })
 
+-- FPS Boost Info
+SettingsTab:CreateLabel("FPS Boost sẽ:")
+SettingsTab:CreateLabel("- Tắt bóng đổ")
+SettingsTab:CreateLabel("- Tắt hiệu ứng ánh sáng")
+SettingsTab:CreateLabel("- Tắt Particle/Decal")
+SettingsTab:CreateLabel("- Giảm chất lượng đồ họa")
+SettingsTab:CreateLabel("=> Tăng FPS tối đa")
+
+SettingsTab:CreateDivider()
+
+-- Reload Button
+SettingsTab:CreateButton({
+    Name = "Reload UI",
+    Callback = function()
+        pcall(function()
+            Rayfield:Destroy()
+            ClearESP()
+            DisableFly()
+            DisableNoClip()
+            DisableInfJump()
+            if FOVCircle then
+                FOVCircle:Remove()
+                FOVCircle = nil
+            end
+        end)
+        wait(0.5)
+        loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+    end
+})
+
+-- Destroy Button
 SettingsTab:CreateButton({
     Name = "Destroy UI",
     Callback = function()
-        Window:Destroy()
-        local btnGui = game.CoreGui:FindFirstChild("SkibidiButton")
-        if btnGui then btnGui:Destroy() end
-        ClearESP()
-        DisableFly()
-        DisableNoClip()
-        DisableInfJump()
-        if FOVCircle then
-            FOVCircle:Remove()
-            FOVCircle = nil
-        end
+        pcall(function()
+            Rayfield:Destroy()
+            ClearESP()
+            DisableFly()
+            DisableNoClip()
+            DisableInfJump()
+            if FOVCircle then
+                FOVCircle:Remove()
+                FOVCircle = nil
+            end
+            local btnGui = game.CoreGui:FindFirstChild("SkibidiButton")
+            if btnGui then btnGui:Destroy() end
+        end)
+        ToggleFPSBoost(false)
     end
 })
 
 -- ==================== TAB COMMUNITY ====================
-local CommunityTab = Window:CreateTab({
-    Name = "COMMUNITY",
-    Icon = "🌐"
+local CommunityTab = Window:CreateTab("COMMUNITY", nil)
+
+CommunityTab:CreateButton({
+    Name = "💬 Discord",
+    Callback = function()
+        setclipboard("https://discord.gg/")
+    end
 })
 
-local socials = {
-    {Name = "Discord", Icon = "💬", Link = "https://discord.gg/"},
-    {Name = "TikTok", Icon = "🎵", Link = "https://tiktok.com/"},
-    {Name = "YouTube", Icon = "▶️", Link = "https://youtube.com/"},
-    {Name = "Twitter/X", Icon = "🐦", Link = "https://x.com/"},
-    {Name = "Instagram", Icon = "📷", Link = "https://instagram.com/"},
-    {Name = "Telegram", Icon = "✈️", Link = "https://t.me/"}
-}
+CommunityTab:CreateButton({
+    Name = "🎵 TikTok",
+    Callback = function()
+        setclipboard("https://tiktok.com/")
+    end
+})
 
-for _, social in pairs(socials) do
-    CommunityTab:CreateButton({
-        Name = social.Icon .. " " .. social.Name,
-        Callback = function()
-            setclipboard(social.Link)
-        end
-    })
-end
+CommunityTab:CreateButton({
+    Name = "▶️ YouTube",
+    Callback = function()
+        setclipboard("https://youtube.com/")
+    end
+})
+
+CommunityTab:CreateButton({
+    Name = "🐦 Twitter/X",
+    Callback = function()
+        setclipboard("https://x.com/")
+    end
+})
+
+CommunityTab:CreateButton({
+    Name = "📷 Instagram",
+    Callback = function()
+        setclipboard("https://instagram.com/")
+    end
+})
+
+CommunityTab:CreateButton({
+    Name = "✈️ Telegram",
+    Callback = function()
+        setclipboard("https://t.me/")
+    end
+})
 
 CommunityTab:CreateDivider()
 
-CommunityTab:CreateLabel({
-    Text = "Script by vietdz"
-})
-
-CommunityTab:CreateLabel({
-    Text = "Game: RIVALS"
-})
-
-CommunityTab:CreateLabel({
-    Text = "Version: 1.0"
-})
+CommunityTab:CreateLabel("Script by vietdz")
+CommunityTab:CreateLabel("Game: RIVALS")
+CommunityTab:CreateLabel("Version: 1.0")
